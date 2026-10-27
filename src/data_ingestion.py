@@ -1,86 +1,79 @@
-from pathlib import Path
 import shutil
-
-import kagglehub
+from pathlib import Path
 import pandas as pd
+import kagglehub
 
+from config.constants import CONFIG_FILE_PATH, RAW_DATA_PATH
 from utils.custom_exception import CustomException
+from utils.helpers import read_yaml, ensure_dir
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+
 class DataIngestion:
     """Download and store the raw credit risk dataset."""
 
-    def __init__(
-        self,
-        dataset_id: str = "laotse/credit-risk-dataset",
-        output_dir: str = "artifacts/raw",
-    ) -> None:
-        self.dataset_id = dataset_id
-        self.output_dir = Path(output_dir)
-        self.file_name = "credit_risk_dataset.csv"
+    def __init__(self, config_path: Path = CONFIG_FILE_PATH) -> None:
+        try:
+            self.config = read_yaml(config_path) if Path(config_path).exists() else {}
+            ingestion_cfg = self.config.get("data_ingestion", {})
+            self.dataset_id = ingestion_cfg.get("dataset_id", "laotse/credit-risk-dataset")
+            self.output_dir = Path(ingestion_cfg.get("raw_dir", "artifacts/raw"))
+            self.file_name = ingestion_cfg.get("file_name", "credit_risk_dataset.csv")
+            self.destination_path = self.output_dir / self.file_name
+        except Exception as e:
+            logger.error("Failed to initialize DataIngestion component")
+            raise CustomException("Initialization error in DataIngestion", e)
 
     def download_dataset(self) -> Path:
-        """Download dataset files from Kaggle."""
+        """Download dataset from Kaggle if not already present."""
+        try:
+            ensure_dir(self.output_dir)
 
-        logger.info(f"Downloading dataset: {self.dataset_id}")
+            if self.destination_path.exists() and self.destination_path.stat().st_size > 0:
+                logger.info(f"Dataset already exists at: {self.destination_path.resolve()}. Skipping download.")
+                return self.destination_path
 
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Downloading dataset from Kaggle: {self.dataset_id}")
+            downloaded_path = Path(kagglehub.dataset_download(self.dataset_id))
 
-        # Download dataset files to KaggleHub's cache
-        downloaded_path = Path(
-            kagglehub.dataset_download(self.dataset_id)
-        )
+            csv_files = list(downloaded_path.rglob("*.csv"))
+            if not csv_files:
+                raise FileNotFoundError(f"No CSV files found in {downloaded_path}")
 
-        # Find CSV files in the downloaded directory
-        csv_files = list(downloaded_path.rglob("*.csv"))
+            source_path = csv_files[0]
+            shutil.copy2(source_path, self.destination_path)
+            logger.info(f"Dataset copied to: {self.destination_path.resolve()}")
 
-        if not csv_files:
-            raise FileNotFoundError(
-                f"No CSV files found in {downloaded_path}"
-            )
-
-        if len(csv_files) > 1:
-            logger.info("Available CSV files:")
-            for index, file in enumerate(csv_files, start=1):
-                logger.info(f"{index}. {file.name}")
-
-            raise ValueError(
-                "Multiple CSV files found. Select the required CSV "
-                "file explicitly."
-            )
-
-        source_path = csv_files[0]
-        destination_path = self.output_dir / self.file_name
-
-        # Copy the CSV into the project artifacts directory
-        shutil.copy2(source_path, destination_path)
-
-        logger.info(f"Dataset saved to: {destination_path.resolve()}")
-
-        return destination_path
+            return self.destination_path
+        except Exception as e:
+            logger.error("Error during dataset download")
+            raise CustomException("Failed to download dataset", e)
 
     def validate_dataset(self, csv_path: Path) -> pd.DataFrame:
         """Load and perform basic validation of the raw dataset."""
+        try:
+            df = pd.read_csv(csv_path)
+            if df.empty:
+                raise ValueError("The downloaded CSV file is empty.")
 
-        df = pd.read_csv(csv_path)
+            logger.info(f"Dataset successfully loaded. Shape: {df.shape}")
+            logger.info(f"Columns present: {df.columns.tolist()}")
+            return df
+        except Exception as e:
+            logger.error("Error validating downloaded raw dataset")
+            raise CustomException("Failed to validate raw dataset", e)
 
-        if df.empty:
-            raise ValueError("The downloaded CSV is empty.")
-
-        logger.info(f"\nDataset shape: {df.shape}")
-        logger.info(f"Columns: {df.columns.tolist()}")
-        logger.info("\nFirst 5 records:")
-        logger.info(df.head())
-
-        return df
-
-    def run(self) -> pd.DataFrame:
-        """Run the complete ingestion pipeline."""
-
-        csv_path = self.download_dataset()
-        return self.validate_dataset(csv_path)
+    def run(self) -> Path:
+        """Run the complete ingestion pipeline and return path to raw CSV."""
+        try:
+            csv_path = self.download_dataset()
+            self.validate_dataset(csv_path)
+            return csv_path
+        except Exception as e:
+            logger.error("Data Ingestion execution failed")
+            raise CustomException("Data Ingestion failed", e)
 
 
 if __name__ == "__main__":

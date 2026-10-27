@@ -1,0 +1,69 @@
+data_ingestion:
+  dataset_id: "laotse/credit-risk-dataset"
+  raw_dir: "artifacts/raw"
+  file_name: "credit_risk_dataset.csv"
+
+data_validation:
+  min_age: 18
+  max_age: 100
+  max_emp_length: 60
+  min_loan_amnt: 1
+
+data_transformation:
+  target_column: "loan_status"
+  test_size: 0.2
+  random_state: 42
+  numeric_columns:
+    - "person_age"
+    - "person_income"
+    - "person_emp_length"
+    - "loan_amnt"
+    - "loan_int_rate"
+    - "loan_percent_income"
+    - "cb_person_cred_hist_length"
+  categorical_columns:
+    - "person_home_ownership"
+    - "loan_intent"
+    - "loan_grade"
+    - "cb_person_default_on_file"
+
+model_training:
+  cv_splits: 5
+  random_state: 42
+  scoring: "average_precision"
+  target_recall: 0.80
+  tune_hyperparameters: false
+  n_iter_search: 25
+  xgboost_params:
+    n_estimators: 557
+    max_depth: 5
+    learning_rate: 0.07147
+    subsample: 0.70525
+    colsample_bytree: 0.98479
+    min_child_weight: 5
+    gamma: 2.68013
+    random_state: 42
+  lightgbm_params:
+    n_estimators: 408
+    num_leaves: 40
+    max_depth: 8
+    learning_rate: 0.05365
+    subsample: 0.81944
+    colsample_bytree: 0.90711
+    min_child_weight: 4
+    min_split_gain: 1.6032
+    reg_alpha: 0.36923
+    reg_lambda: 2.27134
+    random_state: 42
+    verbosity: -1
+  calibration_method: "sigmoid"
+  calibration_cv: 5
+
+artifacts:
+  raw_dir: "artifacts/raw"
+  processed_dir: "artifacts/processed"
+  models_dir: "artifacts/models"
+  visuals_dir: "artifacts/visuals"
+  model_path: "artifacts/models/credit_risk_model.pkl"
+  threshold_path: "artifacts/models/best_threshold.pkl"
+  metrics_path: "artifacts/models/model_metrics.json"
